@@ -1,15 +1,14 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const { open } = require("sqlite");
 const sqlite3 = require("sqlite3");
 const path = require("path");
-const dbPath = path.join(__dirname, "covid19IndiaPortal.db");
 const app = express();
-
 app.use(express.json());
 
+const dbPath = path.join(__dirname, "cricketMatchDetails.db");
+
 let db = null;
+
 const initializationOfDbandServer = async () => {
   try {
     db = await open({
@@ -17,139 +16,122 @@ const initializationOfDbandServer = async () => {
       driver: sqlite3.Database,
     });
     app.listen(3000, () => {
-      console.log("server is running at http://localhost:3000/");
+      console.log("server is running on http:localhost:3000/");
     });
   } catch (error) {
-    console.log(error);
+    console.log(`db error is ${error}`);
     process.exit(1);
   }
 };
 initializationOfDbandServer();
 
-//Login API
-app.post("/login/", async (request, response) => {
-  const { username, password } = request.body;
-  const getUserQuery = `select * from user where username ='${username}';`;
-  const dbUser = await db.get(getUserQuery);
-  if (dbUser === undefined) {
-    response.status(400);
-    response.send("Invalid user");
-  } else {
-    const isMatchedPassword = await bcrypt.compare(password, dbUser.password);
-    if (isMatchedPassword === true) {
-      const payload = { username: username };
-      const jwtToken = await jwt.sign(payload, "msg123");
-      response.send({ jwtToken });
-    } else {
-      response.status(400);
-      response.send("Invalid password");
-    }
-  }
-});
-
-//Authentication API
-const authetication = (request, response, next) => {
-  let jwToken;
-  const token = request.headers["authorization"];
-  if (token !== undefined) {
-    jwToken = token.split(" ")[1];
-    if (jwToken === undefined) {
-      response.status(401);
-      response.send("Invalid JWT Token");
-    } else {
-      const isMatchedJWToken = jwt.verify(
-        jwToken,
-        "msg123",
-        (error, payload) => {
-          if (error) {
-            response.status(401);
-            response.send("Invalid JWT Token");
-          } else {
-            next();
-          }
-        }
-      );
-    }
-  } else {
-    response.status(401);
-    response.send("Invalid JWT Token");
-  }
-};
-
-const convertStateDbObject = (dbObject) => {
+//API 1 Returns a list of all the players in the player table
+const convertPlayerDetailsQuery = (objectItem) => {
   return {
-    stateId: dbObject.state_id,
-    stateName: dbObject.state_name,
-    population: dbObject.population,
+    playerId: objectItem.player_id,
+    playerName: objectItem.player_name,
   };
 };
-//Get all states API
-app.get("/states/", authetication, async (request, response) => {
-  const getStateQuery = `select * from state;`;
-  const getStateQueryResponse = await db.all(getStateQuery);
+
+app.get("/players/", async (request, response) => {
+  const getPlayerDetailsQuery = `select * from player_details`;
+  const getPlayerDetailsQueryResponse = await db.all(getPlayerDetailsQuery);
   response.send(
-    getStateQueryResponse.map((each) => convertStateDbObject(each))
+    getPlayerDetailsQueryResponse.map((each) => convertPlayerDetailsQuery(each))
   );
 });
-//GET state API
-app.get("/states/:stateId/", authetication, async (request, response) => {
-  const { stateId } = request.params;
-  const getStateIdQuery = `select * from state where state_Id=${stateId};`;
-  const getStateIDResponse = await db.get(getStateIdQuery);
-  response.send(convertStateDbObject(getStateIDResponse));
-});
-//ADD district API
-app.post("/districts/", authetication, async (request, response) => {
-  const { districtName, stateId, cases, cured, active, deaths } = request.body;
-  const getDistrictQuery = `insert into district(district_name,state_id,cases,cured,active,deaths)
-values('${districtName}',${stateId},'${cases}','${cured}','${active}','${deaths}');`;
-  const getDistrictResponse = await db.run(getDistrictQuery);
-  response.send("District Successfully Added");
+
+//API 2 Returns a specific player based on the player ID
+app.get("/players/:playerId/", async (request, response) => {
+  const { playerId } = request.params;
+  const getParticularPlayerQuery = `select * from player_details 
+    where player_id=${playerId};`;
+  const getParticularPlayerQueryResponse = await db.get(
+    getParticularPlayerQuery
+  );
+  response.send(convertPlayerDetailsQuery(getParticularPlayerQueryResponse));
 });
 
-const convertDistrictDbObject = (dbObject) => {
+//API 3 Updates the details of a specific player based on the player ID
+app.put("/players/:playerId/", async (request, response) => {
+  const { playerId } = request.params;
+  const { playerName } = request.body;
+  const updatePLayerDetailsQuery = `update player_details 
+    set player_name='${playerName}'
+    where player_id=${playerId};`;
+
+  const updatePLayerDetailsQueryResponse = await db.run(
+    updatePLayerDetailsQuery
+  );
+  response.send("Player Details Updated");
+});
+
+//API 4 Returns the match details of a specific match
+const convertMatchDetailsQuery = (objectItem) => {
   return {
-    districtId: dbObject.district_id,
-    districtName: dbObject.district_name,
-    stateId: dbObject.state_id,
-    cases: dbObject.cases,
-    cured: dbObject.cured,
-    active: dbObject.active,
-    deaths: dbObject.deaths,
+    matchId: objectItem.match_id,
+    match: objectItem.match,
+    year: objectItem.year,
   };
 };
-//get districts API
-app.get("/districts/:districtId/", authetication, async (request, response) => {
-  const { districtId } = request.params;
-  const getDistrictQuery = `select * from district where district_id=${districtId};`;
-  const getDistrictResponse = await db.get(getDistrictQuery);
-  response.send(convertDistrictDbObject(getDistrictResponse));
+
+app.get("/matches/:matchId/", async (request, response) => {
+  const { matchId } = request.params;
+  const getMatchDetailsQuery = `select * from match_details where match_id=${matchId}`;
+  const getMatchDetailsQueryResponse = await db.get(getMatchDetailsQuery);
+  response.send(convertMatchDetailsQuery(getMatchDetailsQueryResponse));
 });
-//delete district API
-app.delete(
-  "/districts/:districtId/",
-  authetication,
-  async (request, response) => {
-    const { districtId } = request.params;
-    const deleteDistrcitQuery = `delete from district where district_id=${districtId};`;
-    const deleteDistrcitQueryResponse = await db.run(deleteDistrcitQuery);
-    response.send("District Removed");
-  }
-);
-//Update District API
-app.put("/districts/:districtId/", authetication, async (request, response) => {
-  const { districtId } = request.params;
-  const { districtName, stateId, cases, active, cured, deaths } = request.body;
-  const updateDistrictQuery = `update district 
-set district_name='${districtName}',state_id=${stateId},cases='${cases}',active='${active}',cured='${cured}',deaths='${deaths}' where district_id=${districtId};`;
-  const updated = await db.run(updateDistrictQuery);
-  response.send("District Details Updated");
+
+//API 5 Returns a list of all the matches of a player
+app.get("/players/:playerId/matches", async (request, response) => {
+  const { playerId } = request.params;
+  const getMatchesOfPlayerQuery = `select * from player_match_score 
+  natural join match_details  where player_id = ${playerId};`;
+
+  const getMatchesOfPlayer = await db.all(getMatchesOfPlayerQuery);
+  response.send(
+    getMatchesOfPlayer.map((eachItem) => convertMatchDetailsQuery(eachItem))
+  );
 });
-//add total
-app.get("/states/:stateId/stats/", authetication, async (request, response) => {
-  const { stateId } = request.params;
-  const getTotalQuery = ` select sum(cases) as totalCases ,sum(cured) as totalCured,sum(active) as totalActive,sum(deaths) as totalDeaths from district where state_id=${stateId};`;
-  const getTotalQueryResponse = await db.get(getTotalQuery);
-  response.send(getTotalQueryResponse);
+
+//API 6 Returns a list of players of a specific match
+app.get("/matches/:matchId/players", async (request, response) => {
+  const { matchId } = request.params;
+  const getMatchPlayerQuery = `select * from player_match_score NATURAL join player_details 
+    where match_id=${matchId};`;
+  const getMatchPlayerQueryResponse = await db.all(getMatchPlayerQuery);
+  response.send(
+    getMatchPlayerQueryResponse.map((eachItem) =>
+      convertPlayerDetailsQuery(eachItem)
+    )
+  );
 });
+
+//API 7 Returns the statistics of the total score, fours, sixes of a specific player based on the player ID
+const convertFoutSixScoredb = (objectItem) => {
+  return {
+    playerId: objectItem.player_id,
+    playerName: objectItem.player_name,
+    totalScore: objectItem.totalScore,
+    totalFours: objectItem.totalFours,
+    totalSixes: objectItem.totalSixes,
+  };
+};
+
+app.get("/players/:playerId/playerScores", async (request, response) => {
+  const { playerId } = request.params;
+  const getPlayerScored = `
+    select player_details.player_id AS playerId,
+    player_details.player_name AS playerName,
+    SUM(player_match_score.score) AS totalScore,
+    SUM(fours) AS totalFours,
+    SUM(sixes) AS totalSixes FROM 
+    player_details INNER JOIN player_match_score ON
+    player_details.player_id = player_match_score.player_id
+    WHERE player_details.player_id = ${playerId};`;
+
+  const getPlayerState = await db.get(getPlayerScored);
+  response.send(getPlayerState);
+});
+
 module.exports = app;
